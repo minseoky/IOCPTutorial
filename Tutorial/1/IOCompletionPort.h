@@ -150,6 +150,8 @@ public:
 		// Worker Thread 생성
 		for (int i = 0; i < MAX_WORKERTHREAD; i++)
 		{
+			// 새로운 쓰레드 생성하여 WorkerThread() 실행.
+			// emplace_back은 push_back과 달리 객체(새로운 쓰레드)를 내부에서 직접 생성
 			IOWorkerThreads.emplace_back([this]() -> void { WorkerThread(); });
 		}
 	}
