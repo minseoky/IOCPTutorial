@@ -8,7 +8,6 @@
 #include <vector>
 
 #define MAX_SOCKBUF 1024	//패킷 크기
-#define MAX_WORKERTHREAD 4  //쓰레드 풀에 넣을 쓰레드 수
 
 using namespace std;
 
@@ -84,21 +83,11 @@ public:
 	bool InitSocket()
 	{
 		WSADATA wsaData;
-		HANDLE hComPort;
-		SYSTEM_INFO sysInfo;
-		SOCKADDR_IN servAdr;
 		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 		{
 			cerr << "WSAStartup() error" << endl;
 			return false;
 		}
-
-
-		hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-		GetSystemInfo(&sysInfo);
-
-		for (int i = 0; i < sysInfo.dwNumberOfProcessors; i++)
-			_beginthreadex(NULL, 0, (_beginthreadex_proc_type)EchoThreadMain, (LPVOID)hComPort, 0, NULL);
 
 		hServSock = WSASocket(PF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 		if (hServSock == INVALID_SOCKET)
@@ -143,9 +132,12 @@ public:
 		{
 			clntInfos.emplace_back();
 		}
+		SYSTEM_INFO sysInfo;
+		GetSystemInfo(&sysInfo);
 
+		DWORD nCore = sysInfo.dwNumberOfProcessors;
 		// IOCP 등록
-		IOCPHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, MAX_WORKERTHREAD);
+		IOCPHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, nCore);
 		if (IOCPHandle == NULL)
 		{
 			cerr << "CreateIoCompletionPort() error" << endl;
@@ -153,11 +145,14 @@ public:
 		}
 
 		// Worker Thread 생성
-		for (int i = 0; i < MAX_WORKERTHREAD; i++)
+		for (int i = 0; i < nCore; i++)
 		{
 			// 새로운 쓰레드 생성하여 WorkerThread() 실행.
 			// emplace_back은 push_back과 달리 객체(새로운 쓰레드)를 내부에서 직접 생성
-			IOWorkerThreads.emplace_back([this]() -> void { WorkerThread(); });
+			IOWorkerThreads.emplace_back([this]() -> void { 
+				cout << "쓰레드 생성" << endl;
+				WorkerThread(); 
+				});
 		}
 	}
 };
