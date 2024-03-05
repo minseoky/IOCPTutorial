@@ -57,13 +57,17 @@ private:
 	int clntCnt = 0;					// 연결된 클라이언트 수
 	HANDLE IOCPHandle = INVALID_HANDLE_VALUE;	// IOCP 핸들
 	vector<thread> IOWorkerThreads;		// IO Worker 쓰레드
+	thread accepterThread;
 	bool isWorkerRun = true;
 	bool isAccepterRun = true;
 
 	void WorkerThread(void);
+	void AccepterThread(void);
+	LPPER_CLNT_DATA GetEmptyClientInfo(void);
 	void CloseSocket(LPPER_CLNT_DATA clntInfo, bool isForce = false);
 	bool SendMsg(LPPER_CLNT_DATA clntInfo, char* pMsg, int nLen);
 	bool BindRecv(LPPER_CLNT_DATA clntInfo);
+	bool BindIOCompletionPort(LPPER_CLNT_DATA clntInfo);
 public:
 	IOCompletionPort() {}
 	~IOCompletionPort(void)
@@ -154,7 +158,16 @@ public:
 				WorkerThread(); 
 				});
 		}
+		
+		// Accepter Thread 생성
+		accepterThread = std::thread([this]() { AccepterThread(); });
+		cout << "Accepter Thread 시작" << endl;
+
+		cout << "서버 시작" << endl;
+		return true;
 	}
+
+	void DestroyThread(void);
 };
 
 // Overlapped IO 작업에 대한 완료 통보를 받아 그에 해당하는 처리를 하는 함수
@@ -228,6 +241,92 @@ void IOCompletionPort::WorkerThread()
 
 }
 
+void IOCompletionPort::AccepterThread(void)
+{
+	SOCKADDR_IN clntAdr;
+	int clntAdrSz = sizeof(clntAdr);
+	
+	while (isAccepterRun)
+	{
+		//접속을 받을 구조체의 인덱스를 얻어온다.
+		LPPER_CLNT_DATA clntInfo = GetEmptyClientInfo();
+		if (clntInfo == NULL)
+		{
+			cout << "[에러] Client Full\n" << endl;
+			return;
+		}
+
+		//클라이언트 접속 요청이 들어올 때까지 대기
+		clntInfo->clntSockInfo.hClntSock = accept(hServSock,
+			(SOCKADDR*)&clntAdr,
+			&clntAdrSz);
+		if (clntInfo->clntSockInfo.hClntSock == INVALID_SOCKET)
+			continue;
+
+		//IO Completion Port객체와 소켓을 연결시킨다.
+		bool bRet = BindIOCompletionPort(clntInfo);
+		if (false == bRet)
+			return;
+
+		//Recv Overlapped IO작업을 요청해 놓는다.
+		bRet = BindRecv(clntInfo);
+		if (bRet == false)
+			return;
+
+		char clientIP[32] = { 0, };
+		inet_ntop(AF_INET, &(clntAdr.sin_addr), clientIP, 32 - 1);
+		cout << "클라이언트 접속 : IP(" << clientIP << ") SOCKET(" << (int)clntInfo->clntSockInfo.hClntSock << ")" << endl;
+
+		//클라이언트 갯수 증가
+		++clntCnt;
+	}
+}
+
+//생성된 쓰레드를 파괴한다.
+void IOCompletionPort::DestroyThread(void)
+{
+	isWorkerRun = false;
+	CloseHandle(IOCPHandle);
+
+	for (auto& th : IOWorkerThreads)
+	{
+		if (th.joinable())
+			th.join();
+	}
+
+	// Accepter 쓰레드 종료
+	isAccepterRun = false;
+	closesocket(hServSock);
+
+	if (accepterThread.joinable())
+		accepterThread.join();
+}
+
+LPPER_CLNT_DATA IOCompletionPort::GetEmptyClientInfo(void)
+{
+	for (auto& client : clntInfos)
+	{
+		if (client.clntSockInfo.hClntSock == INVALID_SOCKET)
+			return &client;
+	}
+	return nullptr;
+}
+
+bool IOCompletionPort::BindIOCompletionPort(LPPER_CLNT_DATA clntInfo)
+{
+	//socket과 clntInfo를 CompletionPort객체와 연결시킨다.
+	auto hIOCP = CreateIoCompletionPort((HANDLE)clntInfo->clntSockInfo.hClntSock,
+		IOCPHandle,
+		(ULONG_PTR)(clntInfo), 0);
+
+	if (hIOCP == NULL || hIOCP != IOCPHandle)
+	{
+		cout << "[에러] CreateIoCompletionPort()함수 실패" << endl;
+		return false;
+	}
+
+	return true;
+}
 
 void IOCompletionPort::CloseSocket(LPPER_CLNT_DATA clntInfo, bool isForce)
 {

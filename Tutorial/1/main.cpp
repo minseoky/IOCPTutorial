@@ -18,7 +18,10 @@ int main(int argc, char* argv[])
 
 	IOCP.StartServer(MAX_CLNT_CNT);
 
-	this_thread::sleep_for(2000ms);
+	cout << "아무 키나 누르면 서버를 종료합니다." << endl;
+	getchar();
+
+	IOCP.DestroyThread();
 
 	return 0;
 }
