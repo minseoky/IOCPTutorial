@@ -58,8 +58,13 @@ private:
 	int clntCnt = 0;					// 연결된 클라이언트 수
 	HANDLE IOCPHandle = INVALID_HANDLE_VALUE;	// IOCP 핸들
 	vector<thread> IOWorkerThreads;		// IO Worker 쓰레드
+	bool isWorkerRun = true;
+	bool isAccepterRun = true;
 
 	void WorkerThread(void);
+	void CloseSocket(LPPER_CLNT_DATA clntInfo, bool isForce = false);
+	bool SendMsg(LPPER_CLNT_DATA clntInfo, char* pMsg, int nLen);
+	bool BindRecv(LPPER_CLNT_DATA clntInfo);
 public:
 	IOCompletionPort() {}
 	~IOCompletionPort(void)
@@ -157,10 +162,154 @@ public:
 	}
 };
 
-
+// Overlapped IO 작업에 대한 완료 통보를 받아 그에 해당하는 처리를 하는 함수
 void IOCompletionPort::WorkerThread()
 {
-	cout << "worker thread 생성" << endl;
+	//CompletionKey를 받을 포인터 변수
+	LPPER_CLNT_DATA clntInfo = NULL;
+	//함수 호출 성공 여부
+	BOOL success = TRUE;
+	//Overlapped IO작업에서 전송된 데이터 크기
+	DWORD dwIoSize = 0;
+	//IO 작업을 위해 요청한 Overlapped 구조체를 받을 포인터
+	LPOVERLAPPED lpOverlapped = NULL;
+
+	while (isWorkerRun)
+	{
+		/*
+		 * 이 함수로 인해 쓰레드들은 WaitingThread Queue 에 대기 상태로 들어가게 된다.
+		 * 완료된 Overlapped IO작업이 발생하면 IOCP Queue에서 완료된 작업을 가져와 뒤 처리를 한다.
+		 * 그리고 PostQueuedCompletionStatus()함수에 의해 사용자 메세지가 도착되면 쓰레드를 종료한다.
+		*/
+		success = GetQueuedCompletionStatus(IOCPHandle,
+			&dwIoSize,									// 실제로 전송된 바이트
+			(PULONG_PTR)&clntInfo,						// CompletionKey
+			&lpOverlapped,								// overlapped 객체
+			INFINITE);									// 무한 대기
+
+		//사용자 쓰레드 종료 메세지 처리
+		if (success == TRUE && dwIoSize == 0 && lpOverlapped == NULL)
+		{
+			isWorkerRun = false;
+			continue;
+		}
+
+		if (lpOverlapped == NULL)
+		{
+			continue;
+		}
+
+		//client가 접속을 끊었을 때
+		if (success == FALSE || (dwIoSize == 0 && success == TRUE))
+		{
+			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ") 접속 끊김" << endl;
+			CloseSocket(clntInfo);
+			continue;
+		}
+
+		LPPER_IO_DATA ioData = (LPPER_IO_DATA)lpOverlapped;
+
+		//OverlappedIO Recv작업일 경우 처리
+		if (ioData->rwmode == RWMode::RECV)
+		{
+			ioData->buffer[dwIoSize] = NULL;
+			cout << "[수신] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
+
+			// 클라이언트에 메세지를 에코한다.
+			SendMsg(clntInfo, ioData->buffer, dwIoSize);
+			BindRecv(clntInfo);
+		}
+		//Overlapped IO Send작업 뒤 처리
+		else if (ioData->rwmode == RWMode::SEND)
+		{
+			cout << "[송신] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
+		}
+		//예외
+		else
+		{
+			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ")에서 예외상황" << endl;
+		}
+	}
+
+}
+
+
+void IOCompletionPort::CloseSocket(LPPER_CLNT_DATA clntInfo, bool isForce)
+{
+	struct linger linger = { 0, 0 };	// SO_DONTLINGER 로 설정
+
+	//isForce가 true이면 SO_LINGER, timeout = 0으로 설정하여 강제 종료 시킨다. 주의 : 데이터 손실이 있을 수 있음
+	if (isForce == true)
+	{
+		linger.l_onoff = 1;
+	}
+
+	//socketClose소켓의 데이터 송수신을 모두 중단 시킨다.
+	shutdown(clntInfo->clntSockInfo.hClntSock, SD_BOTH);
+
+	//소켓 옵션을 설정한다 : closesocket 함수의 리턴 지연 시간 제어
+	setsockopt(clntInfo->clntSockInfo.hClntSock, SOL_SOCKET, SO_LINGER, (char*)&linger, sizeof(linger));
+
+	//소켓 연결을 종료 시킨다.
+	closesocket(clntInfo->clntSockInfo.hClntSock);
+
+	clntInfo->clntSockInfo.hClntSock = INVALID_SOCKET;
+}
+
+//WSASend Overlapped IO작업
+bool IOCompletionPort::SendMsg(LPPER_CLNT_DATA clntInfo, char* pMsg, int nLen)
+{
+	DWORD dwRecvNumBytes = 0;
+
+	//전송될 메세지를 복사
+	CopyMemory(clntInfo->sendOverlappedIO.buffer, pMsg, nLen);
+
+	//Overlapped IO를 위해 각 정보를 셋팅해 준다.
+	clntInfo->sendOverlappedIO.wsaBuf.len = nLen;
+	clntInfo->sendOverlappedIO.wsaBuf.buf = clntInfo->sendOverlappedIO.buffer;
+	clntInfo->sendOverlappedIO.rwmode = RWMode::SEND;
+
+	int nRet = WSASend(clntInfo->clntSockInfo.hClntSock,
+		&(clntInfo->sendOverlappedIO.wsaBuf),
+		1,
+		&dwRecvNumBytes,
+		0,
+		(LPWSAOVERLAPPED)&clntInfo->sendOverlappedIO,
+		NULL);
+
+	//socket_error이면 client socket이 끊어진걸로 처리한다.
+	if (nRet == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
+	{
+		cout << "[에러] WSASend()함수 실패" << endl;
+		return false;
+	}
+	return true;
+}
+
+bool IOCompletionPort::BindRecv(LPPER_CLNT_DATA clntInfo)
+{
+	DWORD dwFlag = 0;
+	DWORD dwRecvNumBytes = 0;
+	//Overlapped IO을 위해 각 정보 세팅
+	clntInfo->recvOverlappedIO.wsaBuf.len = MAX_SOCKBUF;
+	clntInfo->recvOverlappedIO.wsaBuf.buf = clntInfo->recvOverlappedIO.buffer;
+	clntInfo->recvOverlappedIO.rwmode = RWMode::RECV;
+
+	int nRet = WSARecv(clntInfo->clntSockInfo.hClntSock,
+		&(clntInfo->recvOverlappedIO.wsaBuf),
+		1,
+		&dwRecvNumBytes,
+		&dwFlag,
+		(LPWSAOVERLAPPED)&clntInfo->recvOverlappedIO,
+		NULL);
+
+	//socket_error면 client socket이 끊어진걸로 처리한다.
+	if (nRet == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
+	{
+		cout << "[에러] WSARecv()함수 실패" << endl;
+		return false;
+	}
+	return true;
 }
 
 DWORD WINAPI EchoThreadMain(LPVOID CompletionPortIO)
