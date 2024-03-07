@@ -27,7 +27,7 @@ typedef struct // socket info
 
 typedef struct // buffer info
 {
-	OVERLAPPED overlapped;
+	WSAOVERLAPPED overlapped;
 	WSABUF wsaBuf;
 	char buffer[MAX_SOCKBUF];
 	RWMode rwmode;
