@@ -1,62 +1,28 @@
-ï»¿#pragma once
+#pragma once
 #pragma comment(lib, "ws2_32")
-#include <winsock2.h>
+
 #include <Ws2tcpip.h>
 #include <iostream>
-
 #include <thread>
 #include <vector>
 
-#define MAX_SOCKBUF 1024	//íŒ¨í‚· í¬ê¸°
+#include "Define.h"
+
 
 using namespace std;
 
 DWORD WINAPI EchoThreadMain(LPVOID CompletionPortIO);
 
-enum RWMode
-{
-	RECV,
-	SEND
-};
 
-typedef struct // socket info
-{
-	SOCKET hClntSock;
-	SOCKADDR_IN clntAdr;
-} PER_HANDLE_DATA, * LPPER_HANDLE_DATA;
-
-typedef struct // buffer info
-{
-	WSAOVERLAPPED overlapped;
-	WSABUF wsaBuf;
-	char buffer[MAX_SOCKBUF];
-	RWMode rwmode;
-} PER_IO_DATA, * LPPER_IO_DATA;
-
-typedef struct S// client info
-{
-	PER_HANDLE_DATA clntSockInfo;
-	PER_IO_DATA recvOverlappedIO;
-	PER_IO_DATA sendOverlappedIO;
-
-	S()
-	{
-		memset(&clntSockInfo, 0, sizeof(clntSockInfo));
-		memset(&recvOverlappedIO, 0, sizeof(recvOverlappedIO));
-		memset(&sendOverlappedIO, 0, sizeof(sendOverlappedIO));
-		clntSockInfo.hClntSock = INVALID_SOCKET;
-	}
-
-} PER_CLNT_DATA, * LPPER_CLNT_DATA;
 
 class IOCompletionPort
 {
 private:
-	SOCKET hServSock = INVALID_SOCKET;	// ë¦¬ìŠ¨ ì†Œì¼“
-	vector<PER_CLNT_DATA> clntInfos;	// í´ë¼ì´ì–¸íŠ¸ ì •ë³´ ì €ì¥ êµ¬ì¡°ì²´
-	int clntCnt = 0;					// ì—°ê²°ëœ í´ë¼ì´ì–¸íŠ¸ ìˆ˜
-	HANDLE IOCPHandle = INVALID_HANDLE_VALUE;	// IOCP í•¸ë“¤
-	vector<thread> IOWorkerThreads;		// IO Worker ì“°ë ˆë“œ
+	SOCKET hServSock = INVALID_SOCKET;	// ¸®½¼ ¼ÒÄÏ
+	vector<PER_CLNT_DATA> clntInfos;	// Å¬¶óÀÌ¾ğÆ® Á¤º¸ ÀúÀå ±¸Á¶Ã¼
+	int clntCnt = 0;					// ¿¬°áµÈ Å¬¶óÀÌ¾ğÆ® ¼ö
+	HANDLE IOCPHandle = INVALID_HANDLE_VALUE;	// IOCP ÇÚµé
+	vector<thread> IOWorkerThreads;		// IO Worker ¾²·¹µå
 	thread accepterThread;
 	bool isWorkerRun = true;
 	bool isAccepterRun = true;
@@ -72,18 +38,18 @@ public:
 	IOCompletionPort() {}
 	~IOCompletionPort(void)
 	{
-		// ëª¨ë“  IO Worker ì“°ë ˆë“œ ì¢…ë£Œ ëŒ€ê¸°
+		// ¸ğµç IO Worker ¾²·¹µå Á¾·á ´ë±â
 		for (auto& thread : IOWorkerThreads)
 		{
 			if (thread.joinable())
 			{
 				thread.join();
-				cout << "Worker Thread ì¢…ë£Œ" << endl;
+				cout << "Worker Thread Á¾·á" << endl;
 			}
 		}
 		WSACleanup();
 	}
-	// ì†Œì¼“ ì´ˆê¸°í™” í•¨ìˆ˜
+	// ¼ÒÄÏ ÃÊ±âÈ­ ÇÔ¼ö
 	bool InitSocket()
 	{
 		WSADATA wsaData;
@@ -100,11 +66,11 @@ public:
 			return false;
 		}
 
-		cout << "ì†Œì¼“ ì´ˆê¸°í™” ì™„ë£Œ" << endl;
+		cout << "¼ÒÄÏ ÃÊ±âÈ­ ¿Ï·á" << endl;
 		return true;
 	}
 
-	// ì†Œì¼“ ë“±ë¡ ë° ë¦¬ìŠ¨ í•¨ìˆ˜
+	// ¼ÒÄÏ µî·Ï ¹× ¸®½¼ ÇÔ¼ö
 	bool BindAndListen(const int nBindPort) const
 	{
 		SOCKADDR_IN servAdr;
@@ -124,14 +90,14 @@ public:
 			return false;
 		}
 
-		cout << "ì„œë²„ ë“±ë¡ ì„±ê³µ" << endl;
+		cout << "¼­¹ö µî·Ï ¼º°ø" << endl;
 		return true;
 	}
 
-	// ì ‘ì† ìš”ì²­ ìˆ˜ë½ ë° ë©”ì„¸ì§€ ì²˜ë¦¬ í•¨ìˆ˜
+	// Á¢¼Ó ¿äÃ» ¼ö¶ô ¹× ¸Ş¼¼Áö Ã³¸® ÇÔ¼ö
 	bool StartServer(const int maxClntCnt)
 	{
-		// í´ë¼ì´ì–¸íŠ¸ ìƒì„±
+		// Å¬¶óÀÌ¾ğÆ® »ı¼º
 		for (int i = 0; i < maxClntCnt; ++i)
 		{
 			clntInfos.emplace_back();
@@ -140,7 +106,7 @@ public:
 		GetSystemInfo(&sysInfo);
 
 		DWORD nCore = sysInfo.dwNumberOfProcessors;
-		// IOCP ë“±ë¡
+		// IOCP µî·Ï
 		IOCPHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, nCore);
 		if (IOCPHandle == NULL)
 		{
@@ -148,54 +114,54 @@ public:
 			return false;
 		}
 
-		// Worker Thread ìƒì„±
+		// Worker Thread »ı¼º
 		for (int i = 0; i < nCore; i++)
 		{
-			// ìƒˆë¡œìš´ ì“°ë ˆë“œ ìƒì„±í•˜ì—¬ WorkerThread() ì‹¤í–‰.
-			// emplace_backì€ push_backê³¼ ë‹¬ë¦¬ ê°ì²´(ìƒˆë¡œìš´ ì“°ë ˆë“œ)ë¥¼ ë‚´ë¶€ì—ì„œ ì§ì ‘ ìƒì„±
+			// »õ·Î¿î ¾²·¹µå »ı¼ºÇÏ¿© WorkerThread() ½ÇÇà.
+			// emplace_backÀº push_back°ú ´Ş¸® °´Ã¼(»õ·Î¿î ¾²·¹µå)¸¦ ³»ºÎ¿¡¼­ Á÷Á¢ »ı¼º
 			IOWorkerThreads.emplace_back([this]() -> void {
-				cout << "ì“°ë ˆë“œ ìƒì„±" << endl;
+				cout << "¾²·¹µå »ı¼º" << endl;
 				WorkerThread();
 				});
 		}
 
-		// Accepter Thread ìƒì„±
+		// Accepter Thread »ı¼º
 		accepterThread = std::thread([this]() { AccepterThread(); });
-		cout << "Accepter Thread ì‹œì‘" << endl;
+		cout << "Accepter Thread ½ÃÀÛ" << endl;
 
-		cout << "ì„œë²„ ì‹œì‘" << endl;
+		cout << "¼­¹ö ½ÃÀÛ" << endl;
 		return true;
 	}
 
 	void DestroyThread(void);
 };
 
-// Overlapped IO ì‘ì—…ì— ëŒ€í•œ ì™„ë£Œ í†µë³´ë¥¼ ë°›ì•„ ê·¸ì— í•´ë‹¹í•˜ëŠ” ì²˜ë¦¬ë¥¼ í•˜ëŠ” í•¨ìˆ˜
+// Overlapped IO ÀÛ¾÷¿¡ ´ëÇÑ ¿Ï·á Åëº¸¸¦ ¹Ş¾Æ ±×¿¡ ÇØ´çÇÏ´Â Ã³¸®¸¦ ÇÏ´Â ÇÔ¼ö
 void IOCompletionPort::WorkerThread()
 {
-	//CompletionKeyë¥¼ ë°›ì„ í¬ì¸í„° ë³€ìˆ˜
+	//CompletionKey¸¦ ¹ŞÀ» Æ÷ÀÎÅÍ º¯¼ö
 	LPPER_CLNT_DATA clntInfo = NULL;
-	//í•¨ìˆ˜ í˜¸ì¶œ ì„±ê³µ ì—¬ë¶€
+	//ÇÔ¼ö È£Ãâ ¼º°ø ¿©ºÎ
 	BOOL success = TRUE;
-	//Overlapped IOì‘ì—…ì—ì„œ ì „ì†¡ëœ ë°ì´í„° í¬ê¸°
+	//Overlapped IOÀÛ¾÷¿¡¼­ Àü¼ÛµÈ µ¥ÀÌÅÍ Å©±â
 	DWORD dwIoSize = 0;
-	//IO ì‘ì—…ì„ ìœ„í•´ ìš”ì²­í•œ Overlapped êµ¬ì¡°ì²´ë¥¼ ë°›ì„ í¬ì¸í„°
+	//IO ÀÛ¾÷À» À§ÇØ ¿äÃ»ÇÑ Overlapped ±¸Á¶Ã¼¸¦ ¹ŞÀ» Æ÷ÀÎÅÍ
 	LPOVERLAPPED lpOverlapped = NULL;
 
 	while (isWorkerRun)
 	{
 		/*
-		 * ì´ í•¨ìˆ˜ë¡œ ì¸í•´ ì“°ë ˆë“œë“¤ì€ WaitingThread Queue ì— ëŒ€ê¸° ìƒíƒœë¡œ ë“¤ì–´ê°€ê²Œ ëœë‹¤.
-		 * ì™„ë£Œëœ Overlapped IOì‘ì—…ì´ ë°œìƒí•˜ë©´ IOCP Queueì—ì„œ ì™„ë£Œëœ ì‘ì—…ì„ ê°€ì ¸ì™€ ë’¤ ì²˜ë¦¬ë¥¼ í•œë‹¤.
-		 * ê·¸ë¦¬ê³  PostQueuedCompletionStatus()í•¨ìˆ˜ì— ì˜í•´ ì‚¬ìš©ì ë©”ì„¸ì§€ê°€ ë„ì°©ë˜ë©´ ì“°ë ˆë“œë¥¼ ì¢…ë£Œí•œë‹¤.
+		 * ÀÌ ÇÔ¼ö·Î ÀÎÇØ ¾²·¹µåµéÀº WaitingThread Queue ¿¡ ´ë±â »óÅÂ·Î µé¾î°¡°Ô µÈ´Ù.
+		 * ¿Ï·áµÈ Overlapped IOÀÛ¾÷ÀÌ ¹ß»ıÇÏ¸é IOCP Queue¿¡¼­ ¿Ï·áµÈ ÀÛ¾÷À» °¡Á®¿Í µÚ Ã³¸®¸¦ ÇÑ´Ù.
+		 * ±×¸®°í PostQueuedCompletionStatus()ÇÔ¼ö¿¡ ÀÇÇØ »ç¿ëÀÚ ¸Ş¼¼Áö°¡ µµÂøµÇ¸é ¾²·¹µå¸¦ Á¾·áÇÑ´Ù.
 		*/
 		success = GetQueuedCompletionStatus(IOCPHandle,
-			&dwIoSize,									// ì‹¤ì œë¡œ ì „ì†¡ëœ ë°”ì´íŠ¸
+			&dwIoSize,									// ½ÇÁ¦·Î Àü¼ÛµÈ ¹ÙÀÌÆ®
 			(PULONG_PTR)&clntInfo,						// CompletionKey
-			&lpOverlapped,								// overlapped ê°ì²´
-			INFINITE);									// ë¬´í•œ ëŒ€ê¸°
+			&lpOverlapped,								// overlapped °´Ã¼
+			INFINITE);									// ¹«ÇÑ ´ë±â
 
-		//ì‚¬ìš©ì ì“°ë ˆë“œ ì¢…ë£Œ ë©”ì„¸ì§€ ì²˜ë¦¬
+		//»ç¿ëÀÚ ¾²·¹µå Á¾·á ¸Ş¼¼Áö Ã³¸®
 		if (success == TRUE && dwIoSize == 0 && lpOverlapped == NULL)
 		{
 			isWorkerRun = false;
@@ -207,35 +173,35 @@ void IOCompletionPort::WorkerThread()
 			continue;
 		}
 
-		//clientê°€ ì ‘ì†ì„ ëŠì—ˆì„ ë•Œ
+		//client°¡ Á¢¼ÓÀ» ²÷¾úÀ» ¶§
 		if (success == FALSE || (dwIoSize == 0 && success == TRUE))
 		{
-			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ") ì ‘ì† ëŠê¹€" << endl;
+			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ") Á¢¼Ó ²÷±è" << endl;
 			CloseSocket(clntInfo);
 			continue;
 		}
 
 		LPPER_IO_DATA ioData = (LPPER_IO_DATA)lpOverlapped;
 
-		//OverlappedIO Recvì‘ì—…ì¼ ê²½ìš° ì²˜ë¦¬
+		//OverlappedIO RecvÀÛ¾÷ÀÏ °æ¿ì Ã³¸®
 		if (ioData->rwmode == RWMode::RECV)
 		{
 			ioData->buffer[dwIoSize] = NULL;
-			cout << "[ìˆ˜ì‹ ] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
+			cout << "[¼ö½Å] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
 
-			// í´ë¼ì´ì–¸íŠ¸ì— ë©”ì„¸ì§€ë¥¼ ì—ì½”í•œë‹¤.
+			// Å¬¶óÀÌ¾ğÆ®¿¡ ¸Ş¼¼Áö¸¦ ¿¡ÄÚÇÑ´Ù.
 			SendMsg(clntInfo, ioData->buffer, dwIoSize);
 			BindRecv(clntInfo);
 		}
-		//Overlapped IO Sendì‘ì—… ë’¤ ì²˜ë¦¬
+		//Overlapped IO SendÀÛ¾÷ µÚ Ã³¸®
 		else if (ioData->rwmode == RWMode::SEND)
 		{
-			cout << "[ì†¡ì‹ ] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
+			cout << "[¼Û½Å] bytes : " << dwIoSize << ", msg : " << ioData->buffer << endl;
 		}
-		//ì˜ˆì™¸
+		//¿¹¿Ü
 		else
 		{
-			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ")ì—ì„œ ì˜ˆì™¸ìƒí™©" << endl;
+			cout << "socket(" << (int)clntInfo->clntSockInfo.hClntSock << ")¿¡¼­ ¿¹¿Ü»óÈ²" << endl;
 		}
 	}
 
@@ -248,41 +214,41 @@ void IOCompletionPort::AccepterThread(void)
 
 	while (isAccepterRun)
 	{
-		//ì ‘ì†ì„ ë°›ì„ êµ¬ì¡°ì²´ì˜ ì¸ë±ìŠ¤ë¥¼ ì–»ì–´ì˜¨ë‹¤.
+		//Á¢¼ÓÀ» ¹ŞÀ» ±¸Á¶Ã¼ÀÇ ÀÎµ¦½º¸¦ ¾ò¾î¿Â´Ù.
 		LPPER_CLNT_DATA clntInfo = GetEmptyClientInfo();
 		if (clntInfo == NULL)
 		{
-			cout << "[ì—ëŸ¬] Client Full\n" << endl;
+			cout << "[¿¡·¯] Client Full\n" << endl;
 			return;
 		}
 
-		//í´ë¼ì´ì–¸íŠ¸ ì ‘ì† ìš”ì²­ì´ ë“¤ì–´ì˜¬ ë•Œê¹Œì§€ ëŒ€ê¸°
+		//Å¬¶óÀÌ¾ğÆ® Á¢¼Ó ¿äÃ»ÀÌ µé¾î¿Ã ¶§±îÁö ´ë±â
 		clntInfo->clntSockInfo.hClntSock = accept(hServSock,
 			(SOCKADDR*)&clntAdr,
 			&clntAdrSz);
 		if (clntInfo->clntSockInfo.hClntSock == INVALID_SOCKET)
 			continue;
 
-		//IO Completion Portê°ì²´ì™€ ì†Œì¼“ì„ ì—°ê²°ì‹œí‚¨ë‹¤.
+		//IO Completion Port°´Ã¼¿Í ¼ÒÄÏÀ» ¿¬°á½ÃÅ²´Ù.
 		bool bRet = BindIOCompletionPort(clntInfo);
 		if (false == bRet)
 			return;
 
-		//Recv Overlapped IOì‘ì—…ì„ ìš”ì²­í•´ ë†“ëŠ”ë‹¤.
+		//Recv Overlapped IOÀÛ¾÷À» ¿äÃ»ÇØ ³õ´Â´Ù.
 		bRet = BindRecv(clntInfo);
 		if (bRet == false)
 			return;
 
 		char clientIP[32] = { 0, };
 		inet_ntop(AF_INET, &(clntAdr.sin_addr), clientIP, 32 - 1);
-		cout << "í´ë¼ì´ì–¸íŠ¸ ì ‘ì† : IP(" << clientIP << ") SOCKET(" << (int)clntInfo->clntSockInfo.hClntSock << ")" << endl;
+		cout << "Å¬¶óÀÌ¾ğÆ® Á¢¼Ó : IP(" << clientIP << ") SOCKET(" << (int)clntInfo->clntSockInfo.hClntSock << ")" << endl;
 
-		//í´ë¼ì´ì–¸íŠ¸ ê°¯ìˆ˜ ì¦ê°€
+		//Å¬¶óÀÌ¾ğÆ® °¹¼ö Áõ°¡
 		++clntCnt;
 	}
 }
 
-//ìƒì„±ëœ ì“°ë ˆë“œë¥¼ íŒŒê´´í•œë‹¤.
+//»ı¼ºµÈ ¾²·¹µå¸¦ ÆÄ±«ÇÑ´Ù.
 void IOCompletionPort::DestroyThread(void)
 {
 	isWorkerRun = false;
@@ -294,7 +260,7 @@ void IOCompletionPort::DestroyThread(void)
 			th.join();
 	}
 
-	// Accepter ì“°ë ˆë“œ ì¢…ë£Œ
+	// Accepter ¾²·¹µå Á¾·á
 	isAccepterRun = false;
 	closesocket(hServSock);
 
@@ -314,14 +280,14 @@ LPPER_CLNT_DATA IOCompletionPort::GetEmptyClientInfo(void)
 
 bool IOCompletionPort::BindIOCompletionPort(LPPER_CLNT_DATA clntInfo)
 {
-	//socketê³¼ clntInfoë¥¼ CompletionPortê°ì²´ì™€ ì—°ê²°ì‹œí‚¨ë‹¤.
+	//socket°ú clntInfo¸¦ CompletionPort°´Ã¼¿Í ¿¬°á½ÃÅ²´Ù.
 	auto hIOCP = CreateIoCompletionPort((HANDLE)clntInfo->clntSockInfo.hClntSock,
 		IOCPHandle,
 		(ULONG_PTR)(clntInfo), 0);
 
 	if (hIOCP == NULL || hIOCP != IOCPHandle)
 	{
-		cout << "[ì—ëŸ¬] CreateIoCompletionPort()í•¨ìˆ˜ ì‹¤íŒ¨" << endl;
+		cout << "[¿¡·¯] CreateIoCompletionPort()ÇÔ¼ö ½ÇÆĞ" << endl;
 		return false;
 	}
 
@@ -330,35 +296,35 @@ bool IOCompletionPort::BindIOCompletionPort(LPPER_CLNT_DATA clntInfo)
 
 void IOCompletionPort::CloseSocket(LPPER_CLNT_DATA clntInfo, bool isForce)
 {
-	struct linger linger = { 0, 0 };	// SO_DONTLINGER ë¡œ ì„¤ì •
+	struct linger linger = { 0, 0 };	// SO_DONTLINGER ·Î ¼³Á¤
 
-	//isForceê°€ trueì´ë©´ SO_LINGER, timeout = 0ìœ¼ë¡œ ì„¤ì •í•˜ì—¬ ê°•ì œ ì¢…ë£Œ ì‹œí‚¨ë‹¤. ì£¼ì˜ : ë°ì´í„° ì†ì‹¤ì´ ìˆì„ ìˆ˜ ìˆìŒ
+	//isForce°¡ trueÀÌ¸é SO_LINGER, timeout = 0À¸·Î ¼³Á¤ÇÏ¿© °­Á¦ Á¾·á ½ÃÅ²´Ù. ÁÖÀÇ : µ¥ÀÌÅÍ ¼Õ½ÇÀÌ ÀÖÀ» ¼ö ÀÖÀ½
 	if (isForce == true)
 	{
 		linger.l_onoff = 1;
 	}
 
-	//socketCloseì†Œì¼“ì˜ ë°ì´í„° ì†¡ìˆ˜ì‹ ì„ ëª¨ë‘ ì¤‘ë‹¨ ì‹œí‚¨ë‹¤.
+	//socketClose¼ÒÄÏÀÇ µ¥ÀÌÅÍ ¼Û¼ö½ÅÀ» ¸ğµÎ Áß´Ü ½ÃÅ²´Ù.
 	shutdown(clntInfo->clntSockInfo.hClntSock, SD_BOTH);
 
-	//ì†Œì¼“ ì˜µì…˜ì„ ì„¤ì •í•œë‹¤ : closesocket í•¨ìˆ˜ì˜ ë¦¬í„´ ì§€ì—° ì‹œê°„ ì œì–´
+	//¼ÒÄÏ ¿É¼ÇÀ» ¼³Á¤ÇÑ´Ù : closesocket ÇÔ¼öÀÇ ¸®ÅÏ Áö¿¬ ½Ã°£ Á¦¾î
 	setsockopt(clntInfo->clntSockInfo.hClntSock, SOL_SOCKET, SO_LINGER, (char*)&linger, sizeof(linger));
 
-	//ì†Œì¼“ ì—°ê²°ì„ ì¢…ë£Œ ì‹œí‚¨ë‹¤.
+	//¼ÒÄÏ ¿¬°áÀ» Á¾·á ½ÃÅ²´Ù.
 	closesocket(clntInfo->clntSockInfo.hClntSock);
 
 	clntInfo->clntSockInfo.hClntSock = INVALID_SOCKET;
 }
 
-//WSASend Overlapped IOì‘ì—…
+//WSASend Overlapped IOÀÛ¾÷
 bool IOCompletionPort::SendMsg(LPPER_CLNT_DATA clntInfo, char* pMsg, int nLen)
 {
 	DWORD dwRecvNumBytes = 0;
 
-	//ì „ì†¡ë  ë©”ì„¸ì§€ë¥¼ ë³µì‚¬
+	//Àü¼ÛµÉ ¸Ş¼¼Áö¸¦ º¹»ç
 	CopyMemory(clntInfo->sendOverlappedIO.buffer, pMsg, nLen);
 
-	//Overlapped IOë¥¼ ìœ„í•´ ê° ì •ë³´ë¥¼ ì…‹íŒ…í•´ ì¤€ë‹¤.
+	//Overlapped IO¸¦ À§ÇØ °¢ Á¤º¸¸¦ ¼ÂÆÃÇØ ÁØ´Ù.
 	clntInfo->sendOverlappedIO.wsaBuf.len = nLen;
 	clntInfo->sendOverlappedIO.wsaBuf.buf = clntInfo->sendOverlappedIO.buffer;
 	clntInfo->sendOverlappedIO.rwmode = RWMode::SEND;
@@ -371,10 +337,10 @@ bool IOCompletionPort::SendMsg(LPPER_CLNT_DATA clntInfo, char* pMsg, int nLen)
 		(LPWSAOVERLAPPED)&clntInfo->sendOverlappedIO,
 		NULL);
 
-	//socket_errorì´ë©´ client socketì´ ëŠì–´ì§„ê±¸ë¡œ ì²˜ë¦¬í•œë‹¤.
+	//socket_errorÀÌ¸é client socketÀÌ ²÷¾îÁø°É·Î Ã³¸®ÇÑ´Ù.
 	if (nRet == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
 	{
-		cout << "[ì—ëŸ¬] WSASend()í•¨ìˆ˜ ì‹¤íŒ¨" << endl;
+		cout << "[¿¡·¯] WSASend()ÇÔ¼ö ½ÇÆĞ" << endl;
 		return false;
 	}
 	return true;
@@ -384,7 +350,7 @@ bool IOCompletionPort::BindRecv(LPPER_CLNT_DATA clntInfo)
 {
 	DWORD dwFlag = 0;
 	DWORD dwRecvNumBytes = 0;
-	//Overlapped IOì„ ìœ„í•´ ê° ì •ë³´ ì„¸íŒ…
+	//Overlapped IOÀ» À§ÇØ °¢ Á¤º¸ ¼¼ÆÃ
 	clntInfo->recvOverlappedIO.wsaBuf.len = MAX_SOCKBUF;
 	clntInfo->recvOverlappedIO.wsaBuf.buf = clntInfo->recvOverlappedIO.buffer;
 	clntInfo->recvOverlappedIO.rwmode = RWMode::RECV;
@@ -397,10 +363,10 @@ bool IOCompletionPort::BindRecv(LPPER_CLNT_DATA clntInfo)
 		(LPWSAOVERLAPPED)&clntInfo->recvOverlappedIO,
 		NULL);
 
-	//socket_errorë©´ client socketì´ ëŠì–´ì§„ê±¸ë¡œ ì²˜ë¦¬í•œë‹¤.
+	//socket_error¸é client socketÀÌ ²÷¾îÁø°É·Î Ã³¸®ÇÑ´Ù.
 	if (nRet == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
 	{
-		cout << "[ì—ëŸ¬] WSARecv()í•¨ìˆ˜ ì‹¤íŒ¨" << endl;
+		cout << "[¿¡·¯] WSARecv()ÇÔ¼ö ½ÇÆĞ" << endl;
 		return false;
 	}
 	return true;
